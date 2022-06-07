@@ -1,5 +1,8 @@
 # temporary/work folders
 logs
+.Rprofile
+.Rhistory
+.RData
 
 # backup files
 *~
