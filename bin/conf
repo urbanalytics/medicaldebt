@@ -1,0 +1,30 @@
+#!/bin/bash
+## directory (and other) configuration for bash scripts
+## intended to be run from outside of docker
+## 
+if [[ "$1" == "-h" ]]; then
+    echo "set up shell configuration for shell scripts"
+    echo "usage:"
+    echo "> $0 [-m]"
+    echo "   -m: set up 'mockup' configuration with mockup data"
+    exit 0
+fi
+
+export PROJECTDIR=$HOME/tyyq/social/medicaldebt
+export DATAROOT=$HOME/tyyq/andmebaasiq/medical-collection
+export LOGSDIR=$PROJECTDIR/logs
+# logs for manually run stuff under your username
+export BINDIR=$PROJECTDIR/bin
+## DATA
+export DATADIR=$DATAROOT/casefiles
+export TXTDIR=$DATAROOT/txt
+export RESULTSDIR=$DATAROOT/results
+export STAGINGDIR=$DATAROOT/staging
+
+printConf () {
+    for var in PROJECTDIR DATAROOT DATADIR\
+			  CODEDIR TXTDIR STAGINGDIR \
+			  BINDIR ; do
+	echo "$var:" ${!var}
+    done
+}

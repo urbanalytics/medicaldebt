@@ -1,0 +1,155 @@
+#!/bin/bash
+## convert all pdf/tif files to jpgs
+##
+## The script does not do parallel load balancing well: it walks through
+## cases sequentially, and runs tesseract on each case feeding in the files
+## in parallel.  However, as some files are much longer than the others,
+## it spends a lot of time on a single file in a single tesseract
+## instance.  Not a big issue on low-core-count systems.
+##
+## usage: pdf2txt
+## 
+export DENSITY=250
+# pdf-to-jpg conversion density
+# should create training data and test this
+# note: whe have to export it to make it visible withing shell functions
+
+NP=$(( $(grep -c ^processor /proc/cpuinfo) / 2))
+# number of jobs in parallel
+export OMP=3
+echo "running on $NP CPUs, tesseract on $OMP threads"
+export CONVERT="/usr/bin/convert"
+# use imagemagick convert.  nori has something else mapped to /usr/local/bin/convert
+BINDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+. ${BINDIR}/conf
+# set data location environment
+
+export TESS_LOG=$LOGSDIR/pdf2txt-tesseract_$(date +%Y-%m-%d).log
+export CONVERT_LOG=$LOGSDIR/pdf2txt-convert_$(date +%Y-%m-%d).log
+export ZERO_LOG=$LOGSDIR/pdf2txt-zero-size-files_$(date +%Y-%m-%d).log
+export ERROR_LOG=$LOGSDIR/pdf2txt-errors_$(date +%Y-%m-%d).log
+txtdir=$STAGINGDIR/txt
+# store results into staging, not in the final TXTDIR
+if ! [ -d $txtdir ]; then
+    mkdir $txtdir
+fi
+echo "logging convert output to" $CONVERT_LOG
+echo "logging tesseract output to" $TESS_LOG
+echo "logging zero-size files to" $ZERO_LOG
+echo "logging other errors to" $ERROR_LOG
+echo "storing converted text to" $txtdir
+saveifs=$IFS
+IFS=$'\n'
+
+convert-to-txt () {
+    ## convert a single pdf/tif file into text.
+    ## this function is made to be run in parallel, it also uses tesseract with
+    ##   `OMP_THREAD_LIMIT=$OMP` in parallel, so it can does double parallelism
+    ##   (unless $OMP is set to 1).
+    ## inputs:
+    ##   $1: name of the tif/pdf file
+    ##   $2: name of the directory where to store the txt-s
+    ##   
+    infile=$1
+    outdir=$2
+    # outfile w/directory but w/o extension
+    fname=$(basename "$infile")
+    imgdir=$(mktemp -d)
+    # make thread-local image dir
+    IFS=$'\n'
+    if ! [[ -f "${outdir}/${fname%.*}-000.txt" ]] || [[ "${infile}" -nt "${outdir}/${fname%.*}-000.txt" ]]; then
+    	# if we dont have first page txt, or it's outdated, do convert + ocr
+	if [[ -s "${infile}" ]]; then
+	    # non-zero size
+	    echo "converting ${infile}" >>${CONVERT_LOG}
+    	    $CONVERT -density $DENSITY "${infile}" -strip "${imgdir}/${fname%.*}-%03d.png"  &>>${CONVERT_LOG}
+	    convert_status=$?
+	    pngs=$(find ${imgdir} -name ${fname%.*}-*.png)
+	    if [ "$pngs" == "" ]; then
+		echo something wrong: no pngs
+		echo searchname  ${fname%.*}-*.png
+		echo "no pngs for ${infile} in the form" "${fname%.*}-*.png" >>${ERROR_LOG}
+		ls $imgdir
+		echo $state$'\t'$county$'\t'$year$'\t'$case$'\t'$convert_status >>${CONVERT_LOG}
+		return 1
+		# no files could be converted
+	    fi
+	    for png in $pngs; do
+		pngname=$(basename "$png")
+		echo "tesseracting ${png} to ${outdir}" >>${TESS_LOG}
+    		OMP_THREAD_LIMIT=$OMP tesseract -l eng "$png" "${outdir}/${pngname%.png}" &>>${TESS_LOG}
+		# see https://github.com/tesseract-ocr/tesseract/issues/898
+		# run convert in parallel at nCpu/2, and thread tesseract
+	    done
+	else
+	    echo "${infile}" is of zero size >>${ZERO_LOG}
+	fi
+    else
+	echo "$outdir/${fname} already done" >>${CONVERT_LOG}
+    fi
+    rm -rf ${imgdir}
+    return 0
+    # all right :-)
+}
+export -f convert-to-txt
+
+echo "tesseract stderr log" >${TESS_LOG}
+echo "" >${CONVERT_LOG}
+echo "" >${ZERO_LOG}
+echo "" >${ERROR_LOG}
+nCases=0
+# total cases seen
+for state in $(ls $DATADIR); do
+    export state
+    echo $state state
+    statepdf=$DATADIR/$state
+    statetxt=$txtdir/$state
+    if ! [ -d $statetxt ]; then
+	mkdir $statetxt
+    fi
+    counties=$(ls $statepdf | sed '/^Test$/d')
+    # delete the possible 'Test' county
+    for county in $counties; do
+	export county
+	echo $state $county county
+	yearpdf=$statepdf/$county
+	yeartxt=$statetxt/$county
+	if ! [ -d $yeartxt ]; then
+	    mkdir $yeartxt
+	fi
+	for year in $(ls $yearpdf); do
+	    export year
+	    echo $state $county $year year
+	    casepdf=$yearpdf/$year
+	    casetxt=$yeartxt/$year
+	    if ! [ -d $casetxt ]; then
+		mkdir $casetxt
+	    fi
+	    for case in $(ls $casepdf); do
+		export case
+		nCases=$((nCases + 1))
+		echo $(date) $nCases: $state $county $year $case 
+		casedir=$casepdf/$case
+		casetxt=$casetxt/$case
+		if ! [ -d $casetxt ]; then
+		    mkdir $casetxt
+		fi
+		echo >>${TESS_LOG} "case $state $county $year $case ($nCases)"
+		echo >>${CONVERT_LOG} "case $state $county $year $case ($nCases)"
+		find ${casedir} -regex "\(.*pdf\|.*tif\|.*TIF\)\(\'\"\)?" | parallel -j $NP convert-to-txt {} ${casetxt}
+		# find gives file names like './summons.pdf'
+		# allows the name to end with a quote
+		# parallel adds file name at the end
+	    done
+	done
+    done
+done
+IFS=$saveifs
+echo "In total ${nCases} cases"
+echo "thats it for now :-)"
+
+## Todo:
+## * only 3 first pages of each file?
+## * double parallel loop over convert/tesseract?
+## * number of pages (pdfinfo)
+## * parallel loop over pages, not files?
