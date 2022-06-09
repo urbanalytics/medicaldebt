@@ -121,16 +121,18 @@ for state in $(ls $DATADIR); do
 	    export year
 	    echo $state $county $year year
 	    casepdf=$yearpdf/$year
-	    casetxt=$yeartxt/$year
-	    if ! [ -d $casetxt ]; then
-		mkdir $casetxt
+	    caselisttxt=$yeartxt/$year
+	    # folder where is the list of cases
+	    if ! [ -d $caselisttxt ]; then
+		mkdir $caselisttxt
 	    fi
 	    for case in $(ls $casepdf); do
 		export case
 		nCases=$((nCases + 1))
 		echo $(date) $nCases: $state $county $year $case 
 		casedir=$casepdf/$case
-		casetxt=$casetxt/$case
+		casetxt=$caselisttxt/$case
+		# folder where are the individual case files
 		if ! [ -d $casetxt ]; then
 		    mkdir $casetxt
 		fi
