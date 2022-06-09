@@ -7,3 +7,6 @@ logs
 # backup files
 *~
 
+# unneeded folders
+.cache-*/
+

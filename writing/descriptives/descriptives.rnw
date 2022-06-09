@@ -1,0 +1,116 @@
+\documentclass[dvipsnames]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage[font={small,sl}]{caption}
+\usepackage[bookmarks=TRUE,
+            colorlinks,
+            pdfpagemode=none,
+            pdfstartview=FitH,
+            citecolor=TealBlue,
+            filecolor=black,
+            linkcolor=blue,
+            urlcolor=blue,
+            ]{hyperref}
+\usepackage{marginnote}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{subfig}
+
+\newcommand{\todo}[1]{\marginnote{#1}}
+
+\title{Medical Collection Cases: Descriptive Statistics}
+\author{Ott Toomet}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE>>=
+source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
+source(file.path(CODEDIR, "utils.R"))
+knitr::opts_knit$set(aliases=c(h="fig.height", w="fig.width"))
+knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
+                      h=120/25.4, w=160/25.4,
+                      cache=TRUE, cache.path=".cache-descriptives/"
+                      )
+w2 <- 70/25.4  # width for 2col of figures
+h3 <- 150/25.4  # total width for 3-row figures
+library(ggplot2)
+library(xtable, quietly=TRUE)
+library(gridExtra)
+library(magrittr)
+library(data.table)
+library(xtable)
+@ 
+<<loadData, cached=TRUE, include=FALSE, cache.extra=list(file.info(file.path(DATADIR, "geographic", "cell_lookup+district.csv.bz2")))>>=
+casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
+   setDT()
+casedata[, amount := as.numeric(gsub("[$,]", "",
+                                     `Case Civil Suit Amount`))][
+  , `Case Civil Suit Amount` := NULL]
+@ 
+
+\section{Bill value}
+\label{sec:bill-value}
+
+Figure~\ref{fig:suit-amount} shows the distribution of suit amounts in
+linear scale (left) and log scale (right).  As we can see, the
+distribution is well approximated with a log-normal.  The smallest
+suit value (Table~\ref{tab:suit-amount-descriptive})
+is $\Sexpr{min(casedata[["amount"]], na.rm=TRUE)}$, and the
+largest is $\Sexpr{sprintf("%7.2f", max(casedata[["amount"]], na.rm=TRUE))}$.  
+The 80/20
+ratio is $\Sexpr{round(r80.20(casedata[["amount"]]), 3)}$, i.e. the
+most expensive $\Sexpr{round(100*r80.20(casedata[["amount"]]), 1)}$\% of
+suits claim $\Sexpr{round(100 - 100*r80.20(casedata[["amount"]]), 1)}$\%
+of total amount.  This is similar to inequality in income in ``treatment''
+data. 
+
+\begin{figure}[ht]
+  \centering
+<<results="hide">>=
+h1 <- ggplot(casedata) +
+   geom_histogram(aes(amount),
+                  fill = "skyblue", col="black") +
+   labs(x = "Case civil suit amount ($)")
+h2 <- h1 +
+   scale_x_log10()
+p <- grid.arrange(h1, h2, nrow=1)
+print(p)
+@ 
+\caption{
+  Distribution of the suit amount
+}
+\label{fig:suit-amount}
+\end{figure}
+
+\begin{table}[ht]
+  \centering
+  \caption{
+    Descriptive statistics
+  }
+  \label{tab:suit-amount-descriptive}
+<<results="asis">>=
+d <- c(
+   "N" = length(casedata$amount),
+   "Missings" = sum(is.na(casedata$amount)),
+   "min" = min(casedata$amount, na.rm=TRUE),
+   "median" = median(casedata$amount, na.rm=TRUE),
+   "mean" = mean(casedata$amount, na.rm=TRUE),
+   "max" = max(casedata$amount, na.rm=TRUE),
+   "80/20 ratio" = r80.20(casedata$amount)
+)
+d %>%
+   as.matrix() %>%
+   xtable() %>%
+   print(floating=FALSE,
+         include.colnames=FALSE,
+         booktabs=TRUE)
+@   
+\end{table}
+
+
+\bibliographystyle{elsarticle-harv}
+\bibliography{Economics}
+
+\end{document}
