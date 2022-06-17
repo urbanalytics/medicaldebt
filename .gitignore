@@ -1,5 +1,4 @@
-# temporary/work folders
-logs
+# temporary/work files
 .Rprofile
 .Rhistory
 .RData
@@ -9,4 +8,6 @@ logs
 
 # unneeded folders
 .cache-*/
+auto/
+logs/
 

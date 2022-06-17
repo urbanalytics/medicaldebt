@@ -1,0 +1,18 @@
+#!/bin/bash
+## create a csv file of all cases in
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+# https://stackoverflow.com/questions/59895/getting-the-source-directory-of-a-bash-script-from-within
+. ${DIR}/conf
+
+CASE_LIST=${DATAROOT}/case-list.csv
+
+echo "state\tcounty\tyear\tcase" >${CASE_LIST}
+
+cd ${DATADIR}
+find . -mindepth 4 -maxdepth 4 -print |\
+    sed 's/\.\///g' |\
+    sed 's/\//\t/g' >>${CASE_LIST}
+
+bzip2 ${CASE_LIST}
+echo "done ${CASE_LIST}"
