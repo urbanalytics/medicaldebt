@@ -6,6 +6,9 @@
 # backup files
 *~
 
+# not versioned files and folders
+adm/
+
 # unneeded folders
 .cache-*/
 auto/

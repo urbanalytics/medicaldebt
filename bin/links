@@ -1,0 +1,122 @@
+#!/bin/bash
+# make all necessary symlinks for the new versions of results
+#
+if [[ "$1" == "-h" ]]; then
+    echo "make necessary symlinks for new versions of the results"
+    echo "usage:"
+    echo ">$0 [dir]"
+    echo "    dir: which directory to operate on"
+    echo "         default: $RESULTSDIR"
+    echo "              and $STAGINGDIR"
+    exit 0
+fi
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+# https://stackoverflow.com/questions/59895/getting-the-source-directory-of-a-bash-script-from-within
+. ${DIR}/conf
+
+dir=$1
+
+process_dirs () {
+    ## creates links in $DIR for directory names in the form;
+    ## foldername_2016-12-06
+    ## 
+    DIR=$1
+    echo "fixing links in ${DIR}"
+    cd $DIR
+    dirs=$(ls -d */)
+    basedirs=""
+    for d in $dirs; do
+	# create basedirs, only such that have date in the name
+	# and are not symlinks
+	if [[ ! -L "$d" ]]; then
+	    if [[ $d =~ _[0-9]{4}-[0-9]{2}-[0-9]{2}/$ ]]; then
+		# if name matches _yyyy-mm-dd
+		stripped_name=$(basename "$d" | sed -e 's/_[[:digit:]]\{4\}-[[:digit:]]\{2\}-[[:digit:]]\{2\}//g')
+		basedirs="$basedirs"$'\n'"$stripped_name"
+	    fi
+	fi
+    done
+    basedirs=$(echo "$basedirs"|uniq)
+    for bd in $basedirs; do
+	## find all files from $files that match with base
+	dates=""
+	for d in $dirs; do
+	    name=$(basename "$d")
+	    if [[ "$name" =~ ^"$bd"_[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+		date=$(echo $name|sed -e "s/${bd}_//g")
+		dates="$dates"$'\n'"$date"
+	    fi
+	done
+	most_recent=$(echo "$dates" | tail -1)
+	src="${bd}_${most_recent}"
+	dst="${bd}"
+	if [[ "${src}" -nt "${dst}" ]]; then
+	    rm -f "${dst}"
+	    # -f: ignore non-existent files
+	    ln -sfv "${src}" "${dst}"
+	fi
+    done
+}
+process_files_in () {
+    ## creates links in $DIR
+    DIR=$1
+    echo "$DIR:"
+    cd $DIR
+    files=$(ls ${DIR}/*.csv.gz ${DIR}/*.csv.bz2 ${DIR}/*.dta.bz2 2>/dev/null)
+    basefiles=""
+    for f in $files; do
+	# create basefiles, only files that have date in the file name and are not symlinks
+	if [[ ! -L "$f" ]]; then
+	    if [[ $f =~ _[0-9]{4}-[0-9]{2}-[0-9]{2}\.(csv|dta)\.(gz|bz2)$ ]]; then
+		# if file matches _yyyy-mm-dd.(csv|dta).(gz|bz2)
+		stripped_name=$(basename "$f" | sed -e 's/_[[:digit:]]\{4\}-[[:digit:]]\{2\}-[[:digit:]]\{2\}//g')
+		basefiles="$basefiles"$'\n'"$stripped_name"
+	    fi
+	fi
+    done
+    basefiles=$(echo "$basefiles"|uniq)
+    for bf in $basefiles; do
+	base=$(echo $bf|sed -e 's/.\(csv\|dta\).\(gz\|bz2\)//g')
+	## find all files from $files that match with base
+	dates=""
+	for f in $files; do
+	    name=$(basename "$f")
+	    if [[ "$name" =~ ^"$base"_[0-9]{4}-[0-9]{2}-[0-9]{2}\.(csv|dta)\.(gz|bz2)$ ]] &&
+		   # name in the correct form
+		   [[ -s "$name" ]]; then
+		# and the file is not empty
+		date=$(echo $name|sed -e "s/${base}_//g" | sed -e "s/.\(csv\|dta\).\(gz\|bz2\)//g")
+		dates="$dates"$'\n'"$date"
+	    fi
+	done
+	most_recent=$(echo "$dates" | tail -1)
+	## make the link: extension depends on what exists
+	if [[ -f "${base}_${most_recent}.csv.gz" ]]; then
+	    src="${base}_${most_recent}.csv.gz"
+	    dst="${base}.csv.gz"
+	elif [[ -f "${base}_${most_recent}.csv.bz2" ]]; then
+	    src="${base}_${most_recent}.csv.bz2"
+	    dst="${base}.csv.bz2"
+	else
+	    src="${base}_${most_recent}.dta.bz2"
+	    dst="${base}.dta.bz2"
+	fi
+	if [[ "${src}" -nt "${dst}" ]]; then
+	    ln -sfv "${src}" "${dst}"
+	fi
+    done
+}
+
+SAVEIFS=$IFS
+IFS=$'\n'
+SAVEPWD=$(pwd)
+##
+if [ "$dir" == "" ] ; then
+    process_files_in $DATAROOT
+else
+    process_files_in $dir
+fi
+##
+IFS=$SAVEIFS
+cd $SAVEPWD
