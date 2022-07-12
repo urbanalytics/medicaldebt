@@ -2,6 +2,8 @@
 ;;;
 ;;; Usage:
 ;;;
+;;; Load new case with (load-new-case)
+;;;
 ;;; Keyboard shortcuts:
 ;;; C-c c n: mark-city-name
 ;;; C-c c t: mark-city-type
@@ -21,7 +23,7 @@
 ;;; C-c u t: mark-unit-type
 ;;; C-c z:   mark-zip
 ;;; C-c .:   clear-field
-;;; C-x C-s  output-entities
+;;; C-x #:   output marked entities to json
 
 
 ;;; -------------------- highlighting text --------------------
@@ -316,19 +318,26 @@ beg, end are buffer positions"
 
 ;;; -------------------- loading/saving documents --------------------
 
+;; Increase pdf resolution on screen
+;; https://emacs.stackexchange.com/questions/13724/make-doc-view-use-mupdf-for-pdf-files
+(require 'doc-view)
+(setq doc-view-resolution 164)
 ;; Constants
-(defconst CASE-LIST-FILE "~/tyyq/andmebaasiq/medical-collections/case-list.csv.bz2/"
+(defconst DATA-DIR "~/tyyq/andmebaasiq/medical-collection"
+  "main folder for all data files")
+(defconst CASE-LIST-FILE "~/tyyq/andmebaasiq/medical-collection/case-list.csv.bz2"
   "name of the file that contains a list of all cases")
-(defconst CASE-PDF-PATH "~/tyyq/andmebaasiq/medical-collections/casefiles/"
+(defconst CASE-PDF-PATH "~/tyyq/andmebaasiq/medical-collection/casefiles/"
   "name of the folder that contains pdf data")
-(defconst CASE-TXT-PATH "~/tyyq/andmebaasiq/medical-collections/txt/"
+(defconst CASE-TXT-PATH "~/tyyq/andmebaasiq/medical-collection/txt/"
   "name of the folder that contains OCR-d text")
 (defconst SUMMONS-PROBABILITY 0.7
   "the probability to pick summons, compared to a random file,
 from the list of all case files")
 ;; file that contains already annotated texts
 (setq case-annotations-file
-      "~/tyyq/social/medical-collections/staging/case-annotations.ant")
+      (concat DATA-DIR "/staging/case-annotations.ant")
+      )
 (setq case-annotations-buffer
       (find-file-noselect case-annotations-file)
       )
@@ -336,7 +345,7 @@ from the list of all case files")
 ;; load caselist into a buffer
 (with-current-buffer
     (setq case-list-buffer (get-buffer-create "case-list-buffer"))
-  (insert-file-contents "case-list.csv.bz2")
+  (insert-file-contents CASE-LIST-FILE)
   )
 
 
@@ -389,6 +398,11 @@ from the list of all case files")
 	      )
 	)
       )
+    (if (not (buffer-live-p case-annotations-buffer))
+	(setq case-annotations-buffer
+	      (find-file-noselect case-annotations-file)
+	      )
+	  )
     (with-current-buffer case-annotations-buffer
       ;; insert a) the case; b) the file name; c) entities into the buffer
       (goto-char (point-max))
@@ -403,14 +417,17 @@ from the list of all case files")
       )
     )
   (message "Entities saved in %s" case-annotations-file)
-  (kill-buffer)  ; do not keep the case file buffers hanging around
+  ;; we do not want to keep the case file buffers hanging around
+  (set-buffer-modified-p nil)  ; don't ask confirmation
+  (kill-buffer legal-document-buffer)
+  (message "text buffer killed")
   (kill-buffer case-pdf-buffer)
   (load-new-case)
   )
 
 (defun get-case-pdf (casename filename)
-  "download the pdf from the server for given case,
-corresponding to the text file.  For instance, if the file is
+  "download the pdf from the data folder for the given case that
+corresponds to the text file.  For instance, if the file is
 'summons-000.txt', it downloads 'summons.pdf'
 Returns the buffer object
 "
@@ -425,35 +442,31 @@ Returns the buffer object
 	(replace-regexp-in-string
 	 "-[[:digit:]]\\{3\\}\\.txt" extension filename))
   (message "extension %s, pdf file %s" extension pdf-file-name)
-  (setq folder-name (concat CASE-PDF-PATH casename "/" pdf-file-name))
+  (setq pdf-full-name (concat CASE-PDF-PATH casename "/" pdf-file-name))
 			    ;; (shell-quote-argument casename)
 			    ;; "/"
 			    ;; (shell-quote-argument pdf-file-name)))
   (setq case-pdf-buffer
-	(find-file-other-window
-	 (concat "/ssh:" DATA-SERVER-NAME ":" folder-name)
-	 )
+	(find-file-other-window pdf-full-name)
 	)
   case-pdf-buffer
   )
 
 
-;; get file from a given case
-;; display it in a dedicated buffer
-;; return the buffer name
 (defun get-case-file (casename filename)
-  (setq folder-name (concat CASE-TXT-PATH
-			    (shell-quote-argument casename)
-			    "/"
-			    (shell-quote-argument filename)))
-  (setq case-file-buffer (get-buffer-create
-			  (concat casename "/" filename)))
-  (set-buffer case-file-buffer)
-  (setq cmd (concat "ssh " DATA-SERVER-NAME
-		    " cat " (shell-quote-argument
-					; needs double quoting--here too
-			     folder-name)))
-  (call-process-shell-command cmd nil t)
+  "
+get file from a given case
+display it in a dedicated buffer
+return the buffer name
+"
+  ;; concatenate add data path, case path, and file name
+  (setq full-file-name (concat CASE-TXT-PATH
+			       (shell-quote-argument casename)
+			       "/"
+			       (shell-quote-argument filename)))
+  (message "read text %s" full-file-name)
+  ;; read the file, and remember the buffer where it went to
+  (setq case-file-buffer (find-file full-file-name))
   case-file-buffer
   )
 
@@ -461,34 +474,31 @@ Returns the buffer object
 (defun get-filelist (casename &optional pdf)
   "
 Return a list of all files for given case (for text) as a list
-The files are listed on nori
 pdf: if non-nil, then look for actual pdf (or tif) casefiles,
      otherwise take ocr-d text files
   "
-  (with-temp-buffer
-    (setq path (if pdf
-		   CASE-PDF-PATH
-		 CASE-TXT-PATH))
-    (message "casename: %s, pdf: %s, folder path: %s" casename pdf path)
-    (setq folder-name
-	  (concat path
-	   (shell-quote-argument casename)))
-    (call-process-shell-command
-     (concat "ssh nori ls " folder-name)
-     nil t)
-    (goto-char (point-min))
-    (setq files nil)
-    (while (not (eobp))
-	   (setq file
-		 (buffer-substring-no-properties
-		  (line-beginning-position)
-		  (line-end-position)
-		  ))
-	   (setq files (cons file files))
-	   (forward-line 1)
-	   )
+  (setq path (if pdf
+		 CASE-PDF-PATH
+	       CASE-TXT-PATH))
+  (message "casename: %s, pdf: %s, folder path: %s" casename pdf path)
+  (setq folder-name
+	(concat path
+		(shell-quote-argument casename)))
+  (message "folder name: %s" folder-name)
+  (setq dirlist (directory-files folder-name))
+					; lists everything in the folder
+  ;; preserve only files
+  (setq filelist nil)
+  (dolist (entry dirlist)
+    (if (not
+	 (car (file-attributes entry))
+					; first attribute 'nil': regular file
+					; string: symlink, should dereference it but not needed for now
+	 )
+	(setq filelist (cons entry filelist))
+      )
     )
-  files
+  filelist
   )
 
 
@@ -500,8 +510,10 @@ pdf: if non-nil, then look for actual pdf (or tif) casefiles,
 "
   (interactive)
   ;; 'current-case': current case key as path: 'state/county/year/id'
-  (setq current-case (random-case))
-  (message "Pick %s" current-case)
+  (setq current-case
+	;; replace tab field separators with path separators '/'
+	(replace-regexp-in-string "\t" "/" (random-case)))
+  (message "Pick case %s" current-case)
   ;; get a file out of all possible for the current case
   (setq case-files (get-filelist current-case))
   (setq current-file
@@ -511,13 +523,21 @@ pdf: if non-nil, then look for actual pdf (or tif) casefiles,
   (setq case-file-buffer
 	(get-case-file current-case current-file))
   ;; switch to annotation buffer
+  (message "case file buffer %s " case-file-buffer)
   (switch-to-buffer case-file-buffer)
   (goto-char (point-min))
   (setq buffer-read-only t)
   (annotate-mode)
   (setq case-file-window (get-buffer-window))
-  ;; download the pdf and show in the other window
+  ;; download the pdf and show in the other window, and
+  ;; move to the relevant page
   (get-case-pdf current-case current-file)
+  (doc-view-next-page
+   (string-to-number
+    (replace-regexp-in-string
+     ".*-\\([[:digit:]]\\{3\\}\\)\\.txt$" "\\1" current-file)
+    )
+   )
   ;; get back to annotation buffer
   (select-window case-file-window)
   )
@@ -529,6 +549,7 @@ pdf: if non-nil, then look for actual pdf (or tif) casefiles,
   (with-current-buffer
       (set-buffer case-list-buffer)
     (setq n-cases (line-number-at-pos (point-max)))
+					; how many cases in total
     (setq n (random n-cases))
     (goto-char (point-min))
     (forward-line n)
@@ -542,7 +563,8 @@ pdf: if non-nil, then look for actual pdf (or tif) casefiles,
 (defun select-file (file-list)
   "
 Select a file from list of files.  If there exist something like
-'summons-000.txt' then pick this, otherwise pick a random one
+'summons-000.txt' then pick this with probability 'SUMMONS-PROBABILITY',
+otherwise pick a random one
   "
   (setq file-list-copy file-list)
   (setq selected-file nil)
