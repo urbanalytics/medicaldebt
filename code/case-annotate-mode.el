@@ -342,12 +342,19 @@ from the list of all case files")
       (find-file-noselect case-annotations-file)
       )
 
-;; load caselist into a buffer
-(with-current-buffer
-    (setq case-list-buffer (get-buffer-create "case-list-buffer"))
-  (insert-file-contents CASE-LIST-FILE)
+(defun annotate ()
+  "
+This is the main entry point to the annotation mode.  
+Load the necessary files and start annotation, case-by-case
+"
+  (interactive)
+  ;; load caselist into a buffer
+  (with-current-buffer
+      (setq case-list-buffer (get-buffer-create "case-list-buffer"))
+    (insert-file-contents CASE-LIST-FILE)
+    )
+  (load-new-case)
   )
-
 
 (defun convert-entities-to-json ()
   "Output all annotated entities in the current buffer in the form

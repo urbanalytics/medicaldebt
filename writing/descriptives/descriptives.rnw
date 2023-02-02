@@ -19,6 +19,14 @@
 
 \newcommand{\todo}[1]{\marginnote{#1}}
 
+<<init, include=FALSE>>=
+knitr::opts_knit$set(aliases=c(h="fig.height", w="fig.width"))
+knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
+                      h=120/25.4, w=160/25.4,
+                      cache=TRUE, cache.path=".cache/descriptives/"
+                      )
+@ 
+
 \title{Medical Collection Cases: Descriptive Statistics}
 \author{Ott Toomet}
 
@@ -28,11 +36,6 @@
 <<setup, include=FALSE>>=
 source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
 source(file.path(CODEDIR, "utils.R"))
-knitr::opts_knit$set(aliases=c(h="fig.height", w="fig.width"))
-knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
-                      h=120/25.4, w=160/25.4,
-                      cache=TRUE, cache.path=".cache-descriptives/"
-                      )
 w2 <- 70/25.4  # width for 2col of figures
 h3 <- 150/25.4  # total width for 3-row figures
 library(ggplot2)
@@ -42,16 +45,49 @@ library(magrittr)
 library(data.table)
 library(xtable)
 @ 
-<<loadData, cached=TRUE, include=FALSE, cache.extra=list(file.info(file.path(DATADIR, "geographic", "cell_lookup+district.csv.bz2")))>>=
+<<loadData, cached=TRUE, include=FALSE, error=TRUE>>=
+## Load data from the original table (Kali?)
 casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
    setDT()
 casedata[, amount := as.numeric(gsub("[$,]", "",
                                      `Case Civil Suit Amount`))][
-  , `Case Civil Suit Amount` := NULL]
+ , `Case Civil Suit Amount` := NULL]
+
+## Load extracted data (by Bingbing)
+extractedResults <- fread(file.path(DATAROOT, "results", "extracted-results.csv.bz2"))
+amounts <- extractedResults[, .(`case number`, `principal amount`, `total amount`)][
+ , principal := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `principal amount`))][
+ , total := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `total amount`))][
+ , c("principal amount", "total amount") := NULL]
+setnames(amounts, c("case number"), c("case"))
+
+## Load validation data (Zoe's data)
+validationResults <- fread(file.path(DATAROOT, "results", "validation-results.csv.bz2"),
+                           header=TRUE)
+setnames(validationResults,
+         c("V1", "Medical debt? (Yes/No)", "Judgment Amount", "Principal Amount"),
+         c("case", "medical", "judgementAmount", "principalAmount"),
+         skip_absent=TRUE)
+validationAmounts <- validationResults[
+   tolower(medical) == "yes", .(case, medical, judgementAmount, principalAmount)][
+ , judgementAmount := as.numeric(gsub(" +", "", judgementAmount))][
+ , principalAmount := as.numeric(gsub(" +", "", principalAmount))][
+ , medical := NULL]
 @ 
 
-\section{Bill value}
+
+<<dependson="loadData">>=
+dim(validationAmounts)
+head(validationAmounts)
+@ 
+
+
+
+\section{Total amount in case files}
 \label{sec:bill-value}
+
+Some information about the cases is collected in a table by someone.
+Here is a summary statistics, based on that file.
 
 Figure~\ref{fig:suit-amount} shows the distribution of suit amounts in
 linear scale (left) and log scale (right).  As we can see, the
@@ -104,10 +140,152 @@ d %>%
    as.matrix() %>%
    xtable() %>%
    print(floating=FALSE,
-         include.colnames=FALSE,
+         include.colnames=FALSE, include.rownames=TRUE,
          booktabs=TRUE)
 @   
 \end{table}
+
+
+\section{Lawsuit amount in the extracted data}
+\label{sec:amount-extracted-data}
+
+We have extracted two different data values: \emph{principal amount}
+and \emph{total amount}.
+Figure~\ref{fig:extracted-total-amount-histogram} shows a similar
+histogram for the extraced medical cases as
+Figure~\ref{fig:suit-amount} above.  The figures are broadly similar,
+but the left side of the distribution seems to be truncated in the
+extracted example.
+
+\begin{figure}[ht]
+  \centering
+<<results="hide">>=
+h1 <- ggplot(amounts) +
+   geom_histogram(aes(total),
+                  fill = "skyblue", col="black") +
+   labs(x = "Case civil suit amount ($)")
+h2 <- h1 +
+   scale_x_log10()
+p <- grid.arrange(h1, h2, nrow=1)
+print(p)
+@ 
+\caption{
+  Distribution of the total amount in extracted data
+}
+\label{fig:extracted-total-amount-histogram}
+\end{figure}
+
+\begin{table}[ht]
+  \centering
+  \caption{
+    Descriptive statistics
+  }
+  \label{tab:extracted-amount-descriptive}
+<<results="asis", dependson="loadData">>=
+principal <- amounts$principal %>%
+   na.omit()
+total <- amounts$total %>%
+   na.omit()
+d <- list(
+   "N" = c(length(principal), length(total),
+           length(casedata$amount),
+           length(validationAmounts$principalAmount), length(validationAmounts$judgementAmount)),
+   "Missings" = c(sum(is.na(principal)), sum(is.na(total)),
+                  sum(is.na(casedata$amount)),
+                  sum(is.na(validationAmounts$principalAmount)), sum(is.na(validationAmounts$judgementAmount))),
+   "min" = c(min(principal, na.rm=TRUE), min(total, na.rm=TRUE),
+             min(casedata$amount, na.rm=TRUE),
+             min(validationAmounts$principalAmount, na.rm=TRUE), min(validationAmounts$judgementAmount, na.rm=TRUE)),
+   "median" = c(median(principal, na.rm=TRUE), median(total, na.rm=TRUE),
+                median(casedata$amount, na.rm=TRUE),
+                median(validationAmounts$principalAmount, na.rm=TRUE), median(validationAmounts$judgementAmount, na.rm=TRUE)),
+   "mean" = c(mean(principal, na.rm=TRUE), mean(total, na.rm=TRUE),
+              mean(casedata$amount, na.rm=TRUE),
+              mean(validationAmounts$principalAmount, na.rm=TRUE), mean(validationAmounts$judgementAmount, na.rm=TRUE)),
+   "max" = c(max(principal, na.rm=TRUE), max(total, na.rm=TRUE),
+             max(casedata$amount, na.rm=TRUE),
+             max(validationAmounts$principalAmount, na.rm=TRUE), max(validationAmounts$judgementAmount, na.rm=TRUE)),
+   "80/20 ratio" = c(r80.20(principal), r80.20(total),
+                     r80.20(casedata$amount),
+                    r80.20(validationAmounts$principalAmount), r80.20(validationAmounts$judgementAmount))
+)
+dmat <- Reduce(rbind, d)
+rownames(dmat) <- names(d)
+colnames(dmat) <- c("Principal", "Total",
+                    "Table",
+                    "Principal (validation)", "Judgement (validation)")
+dmat %>%
+   xtable() %>%
+   print(floating=FALSE,
+         include.colnames=TRUE, include.rownames=TRUE,
+         booktabs=TRUE)
+@   
+\end{table}
+
+
+\section{Validation results}
+\label{sec:validation-results}
+
+<<validation-data, dependson="loadData">>=
+validation <- merge(amounts, validationAmounts,
+                    all=FALSE,
+                    by="case")
+@ 
+
+Currently we have \Sexpr{nrow(validationAmounts)} manually validated
+medical cases, when we merge these by automatically extracted ones, we
+are left with \Sexpr{nrow(validation)} common cases.  A number of
+those cases contain missing values.
+
+\begin{figure}[ht]
+  \begin{center}
+<<amount-validation-plot, error=TRUE, dependson="validation-data">>=
+## Long form for easier ggplotting    
+vLong <- melt(validation, id.vars="case",
+              measure.vars=list(c("principal", "total"),
+                                c("principalAmount", "judgementAmount")),
+              value.name=c("Automatic", "Manual"),
+              variable.name="Type"
+              )[
+ , Type := ifelse(Type == 1, "Principal", "Total")]
+                           # Better labels for types
+p <- ggplot(vLong, aes(Automatic, Manual, col=Type)) +
+   geom_abline(intercept=0, slope=1, col="gray") +
+   geom_point() +
+   scale_x_log10() + scale_y_log10()
+## Which extractions are off
+iOff <- which(abs(vLong$Automatic - vLong$Manual) > 1)
+offCases <- vLong$case[iOff]
+if(length(iOff) > 0) {
+   p <- p +
+      geom_text(data=vLong[iOff], label=offCases,
+                nudge_x = 0.17,
+                show.legend=FALSE,
+                col="black")
+}
+p
+@     
+\end{center}
+\caption{
+  Automatically extracted versus manually validated cases
+  ($N=\Sexpr{nrow(validation)}$).
+}
+\label{fig:automatic-vs-manual-validation}
+\end{figure}
+
+And here is a table of the offending cases:
+
+\begin{table}[ht]
+  \begin{center}
+<<results="asis">>=
+xtable(validation[case %in% offCases]) %>%
+   print(floating=FALSE,
+         include.colnames=TRUE, include.rownames=TRUE,
+         booktabs=TRUE)
+@     
+  \end{center}
+\end{table}
+
 
 
 \bibliographystyle{elsarticle-harv}
