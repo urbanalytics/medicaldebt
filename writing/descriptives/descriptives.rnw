@@ -1,6 +1,5 @@
 \documentclass[dvipsnames]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
+\usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage[font={small,sl}]{caption}
 \usepackage[bookmarks=TRUE,
@@ -55,61 +54,162 @@ casedata[, amount := as.numeric(gsub("[$,]", "",
 
 ## Load extracted data (by Bingbing)
 extractedResults <- fread(file.path(DATAROOT, "results", "extracted-results.csv.bz2"))
-amounts <- extractedResults[, .(`case number`, `principal amount`, `total amount`)][
+extractedAmounts <- extractedResults[, .(`case number`, `principal amount`, `total amount`)][
  , principal := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `principal amount`))][
  , total := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `total amount`))][
  , c("principal amount", "total amount") := NULL]
-setnames(amounts, c("case number"), c("case"))
+setnames(extractedAmounts, c("case number"), c("case"))
 
 ## Load validation data (Zoe's data)
 validationResults <- fread(file.path(DATAROOT, "results", "validation-results.csv.bz2"),
                            header=TRUE)
 setnames(validationResults,
-         c("V1", "Medical debt? (Yes/No)", "Judgment Amount", "Principal Amount"),
-         c("case", "medical", "judgementAmount", "principalAmount"),
+         c("V1", "Medical debt? (Yes/No)"),
+         c("case", "medical"),
          skip_absent=TRUE)
 validationAmounts <- validationResults[
-   tolower(medical) == "yes", .(case, medical, judgementAmount, principalAmount)][
- , judgementAmount := as.numeric(gsub(" +", "", judgementAmount))][
- , principalAmount := as.numeric(gsub(" +", "", principalAmount))][
- , medical := NULL]
-@ 
+   tolower(medical) == "yes", .(case, medical, `Judgment Amount`, `Principal Amount`)][
+   ## in case of judgement amount: comma separated list, retain the largest value only
+ , total := gsub(" +", "", `Judgment Amount`) %>%
+      strsplit(",") %>%
+      sapply(function(x) max(as.numeric(x)))
+][
+ , principal := as.numeric(gsub(" +", "", `Principal Amount`))][
+ , c("medical", "Judgment Amount", "Principal Amount") := NULL]
+## How many rows in validation data?  It is a bit tricky because all
+## case numbers are filled out..
+nValidation <- validationResults[ , sum(medical != "" | Provider != "" | Name != "")]
+@
+
+\section{Introduction}
+\label{sec:introduction}
+
+We are using three data sources.  One source is  collected by someone
+in a form of excel file.  It is basically a list that contains case
+number, title, date, and suit amount.  It contains \Sexpr{nrow(casedata)} cases.
+We refer to this as ``case
+data'' (C) below.  It is based on the name of the plaintiff, and
+initially assumed that all lawsuits by, e.g. \emph{Dynamic
+  collectors}, are about medical cases.  It turned out not to be the
+case though.
+
+Next data source is the one extracted by Bingbing from casefiles using
+layoutLM.  We refer to this as ``extracted data'' (E).  It contains
+\Sexpr{nrow(extractedResults)} cases.
+
+Final source is ``validation data'' (V), manually extracted by Zoe.  It
+contains \Sexpr{nValidation} rows.
 
 
-<<dependson="loadData">>=
-dim(validationAmounts)
-head(validationAmounts)
-@ 
-
-
-
-\section{Total amount in case files}
+\section{The suit amount}
 \label{sec:bill-value}
 
-Some information about the cases is collected in a table by someone.
-Here is a summary statistics, based on that file.
+Table~\ref{tab:extracted-amount-descriptive} shows the basic
+descriptive statistics for the medical bills in these datasets.
+We ignore C for now as that needs cleaning for medical/non-medical
+cases.  In terms of E and V, the descriptive quantiles are rather
+similar--minimum is in low \$600-s, max \$18,000, and median about
+\$1,200.  Mean is more different,
+\$\Sexpr{round(mean(extractedAmounts[["total"]], na.rm=TRUE), 0)}
+for E and
+\$\Sexpr{round(mean(validationAmounts[["total"]], na.rm=TRUE), 0)}
+for V.
+Inequality measures are fairly similar too, in both cases we see more
+inequality in the principal amount and less in the judgement amount.
+This is probably related to the fact that various flat fees are added
+to the principal amount as it progresses through the court case. 
 
-Figure~\ref{fig:suit-amount} shows the distribution of suit amounts in
-linear scale (left) and log scale (right).  As we can see, the
-distribution is well approximated with a log-normal.  The smallest
-suit value (Table~\ref{tab:suit-amount-descriptive})
-is $\Sexpr{min(casedata[["amount"]], na.rm=TRUE)}$, and the
-largest is $\Sexpr{sprintf("%7.2f", max(casedata[["amount"]], na.rm=TRUE))}$.  
-The 80/20
-ratio is $\Sexpr{round(r80.20(casedata[["amount"]]), 3)}$, i.e. the
-most expensive $\Sexpr{round(100*r80.20(casedata[["amount"]]), 1)}$\% of
-suits claim $\Sexpr{round(100 - 100*r80.20(casedata[["amount"]]), 1)}$\%
-of total amount.  This is similar to inequality in income in ``treatment''
-data. 
+There seems to be issues with E principal amounts, as the smallest
+value \$1 seems to low, also the means are rather different,
+\$\Sexpr{round(mean(extractedAmounts[["principal"]], na.rm=TRUE), 0)}
+for E and
+\$\Sexpr{round(mean(validationAmounts[["principal"]], na.rm=TRUE), 0)}
+for V.
+
+\begin{table}[ht]
+  \centering
+  \caption{
+    Descriptive statistics
+  }
+  \label{tab:extracted-amount-descriptive}
+<<results="asis", dependson="loadData", error=TRUE>>=
+principal <- extractedAmounts$principal %>%
+   na.omit()
+total <- extractedAmounts$total %>%
+   na.omit()
+d <- list(
+   "N" = c(
+      length(casedata$amount),
+      length(principal), length(total),
+      length(validationAmounts$principal), length(validationAmounts$total)),
+   "Missings" = c(
+      sum(is.na(casedata$amount)),
+      sum(is.na(principal)), sum(is.na(total)),
+      sum(is.na(validationAmounts$principal)), sum(is.na(validationAmounts$total))),
+   "min" = c(
+      min(casedata$amount, na.rm=TRUE),
+      min(principal, na.rm=TRUE), min(total, na.rm=TRUE),
+      min(validationAmounts$principal, na.rm=TRUE), min(validationAmounts$total, na.rm=TRUE)),
+   "median" = c(
+      median(casedata$amount, na.rm=TRUE),
+      median(principal, na.rm=TRUE), median(total, na.rm=TRUE),
+      median(validationAmounts$principal, na.rm=TRUE), median(validationAmounts$total, na.rm=TRUE)),
+   "mean" = c(
+      mean(casedata$amount, na.rm=TRUE),
+      mean(principal, na.rm=TRUE), mean(total, na.rm=TRUE),
+      mean(validationAmounts$principal, na.rm=TRUE), mean(validationAmounts$total, na.rm=TRUE)),
+   "max" = c(
+      max(casedata$amount, na.rm=TRUE),
+      max(principal, na.rm=TRUE), max(total, na.rm=TRUE),
+      max(validationAmounts$principal, na.rm=TRUE), max(validationAmounts$total, na.rm=TRUE)),
+   "80/20 ratio" = c(
+      r80.20(casedata$amount),
+      r80.20(principal), r80.20(total),
+      r80.20(validationAmounts$principal), r80.20(validationAmounts$total))
+)
+dmat <- Reduce(rbind, d)
+rownames(dmat) <- names(d)
+colnames(dmat) <- c("Suit amount (C)", "Principal (E)",
+                    "Total (E)",
+                    "Principal (V)", "Judgement (V)")
+dmat %>%
+   xtable() %>%
+   print(floating=FALSE,
+         include.colnames=TRUE, include.rownames=TRUE,
+         booktabs=TRUE)
+@
+\begin{flushleft}
+Notes:
+  $N$ refers to medical debt cases, not to the total number of cases.
+  All case data (C) was supposed to be medical, but that turned out to
+  be wrong.
+\end{flushleft}
+\end{table}
+
+Figure~\ref{fig:suit-amount} shows the distribution of the principal
+(left) 
+and total (right) suit amount for E (blue) and V (red).
+As we can see, the
+distribution is well approximated with a log-normal, and the distributions
+are broadly similar.  The extracted data for both cases contain \$1
+outliers. 
 
 \begin{figure}[ht]
   \centering
 <<results="hide">>=
-h1 <- ggplot(casedata) +
-   geom_histogram(aes(amount),
-                  fill = "skyblue", col="black") +
-   labs(x = "Case civil suit amount ($)")
-h2 <- h1 +
+h1 <- ggplot() +
+   geom_density(data=extractedAmounts, aes(principal),
+                fill = "skyblue", col="black", alpha=0.5) +
+   geom_density(data=validationAmounts, aes(principal),
+                fill = "salmon2", col="black", alpha=0.5) +
+   labs(x = "Case civil suit amount ($)", title="Principal") +
+   scale_x_log10()
+h2 <- ggplot() +
+   geom_density(data=extractedAmounts, aes(principal),
+                fill = "skyblue", col="black", alpha=0.5) +
+   geom_density(data=validationAmounts, aes(principal),
+                fill = "salmon2", col="black", alpha=0.5) +
+   labs(x = "Case civil suit amount ($)", title="Total") +
    scale_x_log10()
 p <- grid.arrange(h1, h2, nrow=1)
 print(p)
@@ -120,130 +220,90 @@ print(p)
 \label{fig:suit-amount}
 \end{figure}
 
-\begin{table}[ht]
-  \centering
-  \caption{
-    Descriptive statistics
-  }
-  \label{tab:suit-amount-descriptive}
-<<results="asis">>=
-d <- c(
-   "N" = length(casedata$amount),
-   "Missings" = sum(is.na(casedata$amount)),
-   "min" = min(casedata$amount, na.rm=TRUE),
-   "median" = median(casedata$amount, na.rm=TRUE),
-   "mean" = mean(casedata$amount, na.rm=TRUE),
-   "max" = max(casedata$amount, na.rm=TRUE),
-   "80/20 ratio" = r80.20(casedata$amount)
-)
-d %>%
-   as.matrix() %>%
-   xtable() %>%
-   print(floating=FALSE,
-         include.colnames=FALSE, include.rownames=TRUE,
-         booktabs=TRUE)
-@   
-\end{table}
 
-
-\section{Lawsuit amount in the extracted data}
-\label{sec:amount-extracted-data}
-
-We have extracted two different data values: \emph{principal amount}
-and \emph{total amount}.
-Figure~\ref{fig:extracted-total-amount-histogram} shows a similar
-histogram for the extraced medical cases as
-Figure~\ref{fig:suit-amount} above.  The figures are broadly similar,
-but the left side of the distribution seems to be truncated in the
-extracted example.
-
-\begin{figure}[ht]
-  \centering
-<<results="hide">>=
-h1 <- ggplot(amounts) +
-   geom_histogram(aes(total),
-                  fill = "skyblue", col="black") +
-   labs(x = "Case civil suit amount ($)")
-h2 <- h1 +
-   scale_x_log10()
-p <- grid.arrange(h1, h2, nrow=1)
-print(p)
-@ 
-\caption{
-  Distribution of the total amount in extracted data
-}
-\label{fig:extracted-total-amount-histogram}
-\end{figure}
-
-\begin{table}[ht]
-  \centering
-  \caption{
-    Descriptive statistics
-  }
-  \label{tab:extracted-amount-descriptive}
-<<results="asis", dependson="loadData">>=
-principal <- amounts$principal %>%
-   na.omit()
-total <- amounts$total %>%
-   na.omit()
-d <- list(
-   "N" = c(length(principal), length(total),
-           length(casedata$amount),
-           length(validationAmounts$principalAmount), length(validationAmounts$judgementAmount)),
-   "Missings" = c(sum(is.na(principal)), sum(is.na(total)),
-                  sum(is.na(casedata$amount)),
-                  sum(is.na(validationAmounts$principalAmount)), sum(is.na(validationAmounts$judgementAmount))),
-   "min" = c(min(principal, na.rm=TRUE), min(total, na.rm=TRUE),
-             min(casedata$amount, na.rm=TRUE),
-             min(validationAmounts$principalAmount, na.rm=TRUE), min(validationAmounts$judgementAmount, na.rm=TRUE)),
-   "median" = c(median(principal, na.rm=TRUE), median(total, na.rm=TRUE),
-                median(casedata$amount, na.rm=TRUE),
-                median(validationAmounts$principalAmount, na.rm=TRUE), median(validationAmounts$judgementAmount, na.rm=TRUE)),
-   "mean" = c(mean(principal, na.rm=TRUE), mean(total, na.rm=TRUE),
-              mean(casedata$amount, na.rm=TRUE),
-              mean(validationAmounts$principalAmount, na.rm=TRUE), mean(validationAmounts$judgementAmount, na.rm=TRUE)),
-   "max" = c(max(principal, na.rm=TRUE), max(total, na.rm=TRUE),
-             max(casedata$amount, na.rm=TRUE),
-             max(validationAmounts$principalAmount, na.rm=TRUE), max(validationAmounts$judgementAmount, na.rm=TRUE)),
-   "80/20 ratio" = c(r80.20(principal), r80.20(total),
-                     r80.20(casedata$amount),
-                    r80.20(validationAmounts$principalAmount), r80.20(validationAmounts$judgementAmount))
-)
-dmat <- Reduce(rbind, d)
-rownames(dmat) <- names(d)
-colnames(dmat) <- c("Principal", "Total",
-                    "Table",
-                    "Principal (validation)", "Judgement (validation)")
-dmat %>%
-   xtable() %>%
-   print(floating=FALSE,
-         include.colnames=TRUE, include.rownames=TRUE,
-         booktabs=TRUE)
-@   
-\end{table}
-
-
-\section{Validation results}
+\section{Validating the results}
 \label{sec:validation-results}
 
+Currently we have \Sexpr{nrow(validationAmounts)} manually validated
+medical cases.
+
+\subsection{Automatic versus manual validation data}
+\label{sec:automatic-vs-manual}
+
+Here we compare the automatically extracted data with the manual
+validation data.
+
+<<validation-medical>>=
+validationCases <- validationResults[startsWith(tolower(medical), "yes"), case]
+extractedCases <- extractedAmounts$case
+common <- intersect(validationCases, extractedCases)
+missing <- setdiff(validationCases, extractedCases)
+P <- length(validationCases)
+TP <- length(common)
+FN <- length(missing)
+@ 
+
+First, let's look at the cases that are recognized as medical cases.
+Out of \Sexpr{P} validated medical cases, the
+extraction algorithm has recognized \Sexpr{TP} cases as
+medical ones, i.e. we have \Sexpr{FN} false negative cases and hence
+recall is \Sexpr{round(TP/P, 2)}.  The cases that were not recognized
+as medical are
+\Sexpr{paste(missing, collapse=", ")}.
+
 <<validation-data, dependson="loadData">>=
-validation <- merge(amounts, validationAmounts,
-                    all=FALSE,
+validation <- merge(extractedAmounts, validationAmounts,
+                    all=FALSE, suffixes = c(".E", ".V"),
                     by="case")
 @ 
 
-Currently we have \Sexpr{nrow(validationAmounts)} manually validated
-medical cases, when we merge these by automatically extracted ones, we
+\begin{table}[ht]
+  \centering
+  \caption{Missing values in processed data}
+  \label{tab:missing-processed}
+<<results="asis">>=
+sapply(validation[, -1], function(v) sum(is.na(v))) %>%
+   matrix(nrow=1,
+          dimnames=list(NULL, names(validation)[-1])) %>%
+   xtable() %>%
+   print(floating=FALSE,
+         include.colnames=TRUE, include.rownames=FALSE,
+         booktabs=TRUE)
+nP <- sum(!is.na(validation[["principal.E"]]))
+nT <- sum(!is.na(validation[["total.E"]]))
+nMP <- sum(is.na(validation[["principal.E"]]))
+nMT <- sum(is.na(validation[["total.E"]]))
+@
+\vspace{0.4ex}\small
+Notes: E for extracted, V for validation cases.
+\end{table}
+
+Next, let's analyze the common cases (true positives).
+After merging with the extracted cases, we
 are left with \Sexpr{nrow(validation)} common cases.  A number of
-those cases contain missing values.
+those cases contain missing values though
+(Table~\ref{tab:missing-processed}).  In particular,
+\Sexpr{nMP} principal amounts and
+\Sexpr{nMT} total amounts are missing,
+resulting in the percentage of captured values (recall of values) to
+be
+\Sexpr{round(nP/nrow(validation), 2)} for the
+principal and
+\Sexpr{round(nT/nrow(validation), 2)} for the total amount,
+conditional on recognizing the case as medical.  Conditional on all
+cases, the corresponding recalls are
+\Sexpr{round(nP/length(validationCases), 2)} 
+and
+\Sexpr{round(nT/length(validationCases), 2)}.
+
 
 \begin{figure}[ht]
   \begin{center}
 <<amount-validation-plot, error=TRUE, dependson="validation-data">>=
 ## Long form for easier ggplotting    
 vLong <- melt(validation, id.vars="case",
-              measure.vars=list(c("principal", "total"),
-                                c("principalAmount", "judgementAmount")),
+              measure.vars=list(c("principal.E", "total.E"),
+                                c("principal.V", "total.V")),
               value.name=c("Automatic", "Manual"),
               variable.name="Type"
               )[
@@ -273,19 +333,73 @@ p
 \label{fig:automatic-vs-manual-validation}
 \end{figure}
 
-And here is a table of the offending cases:
+Finally, compare the Automatic versus manual extraction
+(Figure~\ref{fig:automatic-vs-manual-validation}).  As the figure
+shows, if the algorithm extracts a value, it is correct (cents are
+missing though).
+
+
+\subsection{Principal and total amount}
+\label{sec:principal-total}
+
+The manual validation data is limited to \Sexpr{nrow(P)} cases.  Here
+we compare the principal and total amount of all
+\Sexpr{nrow(extractedAmounts)} E-cases
+(Figure~\ref{fig:principal-total}).  As one can see, the total amount
+is always larger than the principal amount, typically by a few hundred
+dollars.  In particular, there seems to be a
+fairly constant lower limit for the difference between the total and
+principal amount.
+This makes perfectly sense, and suggests that most of the
+values are extracted correctly.
+
+\begin{figure}[ht]
+  \centering
+<<>>=
+ggplot(extractedAmounts, aes(principal, total)) +
+   geom_point() +
+   geom_abline(slope=1, col="gray") +
+   geom_smooth(method="lm", se=FALSE, alpha=0.5, size=0.2) +
+   labs(x="Principal amount", y="Total amount")
+@
+\caption{
+  Principal versus total amount of lawsuits.  In every single case,
+  the total amount exceeds the principal one.  The blue line shows the
+  linear fit.
+}
+\label{fig:principal-total}
+\end{figure}
+
+We can also estimate OLS
+\begin{equation}
+  \label{eq:ols-total-principal}
+  \text{Total}_{i} =
+  \beta_{0} + \beta_{1} \cdot\text{Principal}_{i} + \epsilon_{i}.
+\end{equation}
+The results (Table~\ref{tab:ols-total-principal}) are reasonable, with
+total amount related to the principal amout nearly one-to-one, but
+shifted upward by \$500.  However, as Figure~\ref{fig:principal-total}
+suggests, OLS on average values is not the most interesting model for
+this task.  Instead, one might imagine
+model~(\ref{eq:ols-total-principal}) where the disturbance term has
+some sort of truncated distribution (heteroscedastic
+exponential?), that one should be
+able to capture the lower invelope boundary on
+Figure~\ref{fig:principal-total}.  I do not think this is very
+interesting though.
 
 \begin{table}[ht]
-  \begin{center}
+  \caption{Linear regression: explaining the total amount by the
+    principal amount
+  }
+  \label{tab:ols-total-principal}
+  \centering
 <<results="asis">>=
-xtable(validation[case %in% offCases]) %>%
-   print(floating=FALSE,
-         include.colnames=TRUE, include.rownames=TRUE,
-         booktabs=TRUE)
-@     
-  \end{center}
+lm(total ~ principal, data=extractedAmounts) %>%
+   xtable() %>%
+   print(floating=FALSE, booktabs=TRUE)
+@   
 \end{table}
-
 
 
 \bibliographystyle{elsarticle-harv}

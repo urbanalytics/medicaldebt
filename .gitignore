@@ -3,6 +3,7 @@
 .Rhistory
 .RData
 *.log
+*.aux
 
 # backup files
 *~

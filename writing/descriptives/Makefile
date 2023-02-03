@@ -33,17 +33,14 @@ HTML = $(patsubst %.rmd, %.html, $(RMD))
 # tex versions of the files, just to clean up
 $(info "pdf files: $(PDF)")
 
-%.pdf: %.rnw
-	Rscript -e "knitr::knit2pdf('$<', quiet=FALSE)"
+%.tex: %.rnw
+	Rscript -e "knitr::knit('$<', quiet=FALSE)"
 
-%.md: %.rmd
-	Rscript -e "knitr::knit('$<', quiet=TRUE)"
+# keep TEX for debugging
+.PRECIOUS: %.tex
 
-%.pdf: %.md
-	Rscript -e "rmarkdown::render('$<', output_format=\"all\")"
-
-%.html: %.md
-	Rscript -e "rmarkdown::render('$<', output_format='html_document')"
+%.pdf: %.tex
+	latexmk -xelatex -f -interaction=nonstopmode $<
 
 $(DESCRIPTIVES): $(WRITINGDIR)/descriptives.rnw $(CODEDIR)/conf.R \
  $(CODEDIR)/classes.R  $(CODEDIR)/dataClasses.R $(CODEDIR)/methods.R \
