@@ -44,7 +44,7 @@ library(magrittr)
 library(data.table)
 library(xtable)
 @ 
-<<loadData, cached=TRUE, include=FALSE, error=TRUE>>=
+<<loadData, cached=TRUE, include=FALSE, error=TRUE, cache.extra=file.info(file.path(RESULTSDIR, "validation-results.csv.bz2"))>>=
 ## Load data from the original table (Kali?)
 casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
    setDT()
@@ -74,6 +74,7 @@ validationAmounts <- validationResults[
       strsplit(",") %>%
       sapply(function(x) max(as.numeric(x)))
 ][
+ total < 0, total := NA][
  , principal := as.numeric(gsub(" +", "", `Principal Amount`))][
  , c("medical", "Judgment Amount", "Principal Amount") := NULL]
 ## How many rows in validation data?  It is a bit tricky because all
@@ -215,7 +216,7 @@ p <- grid.arrange(h1, h2, nrow=1)
 print(p)
 @ 
 \caption{
-  Distribution of the suit amount
+  Distribution of the suit amount.  Blue: E, orange: V.
 }
 \label{fig:suit-amount}
 \end{figure}
@@ -233,14 +234,17 @@ medical cases.
 Here we compare the automatically extracted data with the manual
 validation data.
 
-<<validation-medical>>=
+<<validation-medical, dependson="loadData">>=
 validationCases <- validationResults[startsWith(tolower(medical), "yes"), case]
+negatives <- validationResults[startsWith(tolower(medical), "no"), case]
 extractedCases <- extractedAmounts$case
+falsePositives <- intersect(negatives, extractedCases)
 common <- intersect(validationCases, extractedCases)
 missing <- setdiff(validationCases, extractedCases)
 P <- length(validationCases)
 TP <- length(common)
 FN <- length(missing)
+FP <- length(falsePositives)
 @ 
 
 First, let's look at the cases that are recognized as medical cases.
@@ -250,6 +254,12 @@ medical ones, i.e. we have \Sexpr{FN} false negative cases and hence
 recall is \Sexpr{round(TP/P, 2)}.  The cases that were not recognized
 as medical are
 \Sexpr{paste(missing, collapse=", ")}.
+We manually checked case 132017 has provider "Paclab".  However, the
+folder contains seven documents, and that may have confused the
+algorithm. 
+
+On the precision side, \Sexpr{FP} non-medical cases are extracted as
+medical, which gives the precision \Sexpr{round(TP/(TP + FP), 2)}.
 
 <<validation-data, dependson="loadData">>=
 validation <- merge(extractedAmounts, validationAmounts,
@@ -261,7 +271,7 @@ validation <- merge(extractedAmounts, validationAmounts,
   \centering
   \caption{Missing values in processed data}
   \label{tab:missing-processed}
-<<results="asis">>=
+<<results="asis", dependson="validation-data">>=
 sapply(validation[, -1], function(v) sum(is.na(v))) %>%
    matrix(nrow=1,
           dimnames=list(NULL, names(validation)[-1])) %>%
@@ -311,7 +321,7 @@ vLong <- melt(validation, id.vars="case",
                            # Better labels for types
 p <- ggplot(vLong, aes(Automatic, Manual, col=Type)) +
    geom_abline(intercept=0, slope=1, col="gray") +
-   geom_point() +
+   geom_point(alpha=0.5) +
    scale_x_log10() + scale_y_log10()
 ## Which extractions are off
 iOff <- which(abs(vLong$Automatic - vLong$Manual) > 1)
@@ -337,6 +347,27 @@ Finally, compare the Automatic versus manual extraction
 (Figure~\ref{fig:automatic-vs-manual-validation}).  As the figure
 shows, if the algorithm extracts a value, it is correct (cents are
 missing though).
+
+The are \Sexpr{length(iOff)}
+cases that are off by more than \$1 (Table~\ref{tab:e-v-mismatch}).
+The case 127,860 has multiple total amounts, 1502 is the largest of
+those (from 2022),
+but 1320 is stated in an earlier (2019) document.  So it is not
+completely wrong.
+
+\begin{table}[ht]
+  \centering
+  \caption{Mismatch between validation/extracted amounts}
+  \label{tab:e-v-mismatch}
+<<results="asis", dependson="amount-validation-plot">>=
+vLong[iOff][
+   order(case)] %>%
+   xtable() %>%
+   print(floating=FALSE,
+         booktabs=TRUE,
+         include.colnames=TRUE)
+@   
+\end{table}
 
 
 \subsection{Principal and total amount}
@@ -369,6 +400,9 @@ ggplot(extractedAmounts, aes(principal, total)) +
 }
 \label{fig:principal-total}
 \end{figure}
+
+
+
 
 We can also estimate OLS
 \begin{equation}
