@@ -221,6 +221,10 @@ print(p)
 \label{fig:suit-amount}
 \end{figure}
 
+Note that these results are much smaller than found by
+\citet{kluender+2021JAMA}--they find the average debt (conditional of
+having a positive debt) to be \$2733 in the U.S. West.
+
 
 \section{Validating the results}
 \label{sec:validation-results}

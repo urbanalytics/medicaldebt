@@ -4,6 +4,7 @@
 .RData
 *.log
 *.aux
+*.out
 
 # backup files
 *~
