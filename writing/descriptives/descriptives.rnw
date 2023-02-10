@@ -32,6 +32,17 @@ knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
 \begin{document}
 \maketitle
 
+\section{Introduction}
+\label{sec:introduction}
+
+Inappropriate health insurance is a major source of debt for private
+household in the U.S. \citep{kluender+2021JAMA}.  Experimental
+evidence suggests that access to free health care improves both health
+care utilization,
+subjective health outcomes and lower out-of-pocket medical
+expenditures and medical debt \citep{finkelstein+2012QJE}.
+
+
 <<setup, include=FALSE>>=
 source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
 source(file.path(CODEDIR, "utils.R"))
@@ -82,8 +93,8 @@ validationAmounts <- validationResults[
 nValidation <- validationResults[ , sum(medical != "" | Provider != "" | Name != "")]
 @
 
-\section{Introduction}
-\label{sec:introduction}
+\section{Data Sources}
+\label{sec:data-sources}
 
 We are using three data sources.  One source is  collected by someone
 in a form of excel file.  It is basically a list that contains case
