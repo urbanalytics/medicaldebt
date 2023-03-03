@@ -1,0 +1,290 @@
+\documentclass[mathserif, xcolor=table, svgnames, aspectratio=169]{beamer}
+\mode<presentation>
+{
+  \usetheme{Hannover}
+  \setbeamercovered{transparent}
+}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{array,xspace}
+\usepackage{dcolumn}
+\usepackage{eulervm}
+\usepackage{eurosym}
+\usepackage{graphicx}
+\usepackage{booktabs, multicol, multirow}
+\usepackage{relsize}
+\usepackage{subfig}
+\usepackage{wasysym}
+\input{isomath}
+
+\long\def\GobbleColumnStart#1\GobbleColumnStop{}
+\let\GobbleColumnStop\relax
+\newcolumntype{i}{>{\GobbleColumnStart}c<{\GobbleColumnStop}}
+\newcommand{\V}{\ensuremath{\surd}}
+\newcommand{\YSM}{\ensuremath{\text{YSM}}\xspace}
+\graphicspath{{./}{img/}}
+
+
+\title[Semi-digital data]{
+  Automatically extracting data from medical lawsuit files}
+\author[Curtis et al]{
+  Kali Curtis, Bill Howe, Amy Hagopian, Ott Toomet, Bingbing Wen
+  \& others}
+\date{2023-03-03}
+
+<<setup, include=FALSE>>=
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=90/25.4,
+                      message=FALSE,
+                      echo=FALSE,
+                      cache=TRUE, cache.path=".cache/2023-03-03_phd-visit/")
+@ 
+
+\begin{document}
+<<init, include=FALSE>>=
+library(data.table)
+library(magrittr)
+library(ggplot2)
+library(xtable)
+source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
+source(file.path(CODEDIR, "utils.R"))
+options(width=55,
+        tibble.width=50, tibble.print_max=6, tibble.print_min=4)
+par(mar=c(4,4,0,0) + 0.1)
+h2 <- 120/25.4
+w2 <- 90/25.4
+                           # height and width of figures if two sidewise on page
+@ 
+
+<<loadData, include=FALSE>>=
+## Load data from the original table (Kali?)
+casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
+   setDT()
+casedata[, amount := as.numeric(gsub("[$,]", "",
+                                     `Case Civil Suit Amount`))][
+ , `Case Civil Suit Amount` := NULL]
+
+## Load extracted data (by Bingbing)
+extractedResults <- fread(file.path(DATAROOT, "results", "extracted-results.csv.bz2"))
+extractedAmounts <- extractedResults[, .(`case number`, `principal amount`, `total amount`)][
+ , principal := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `principal amount`))][
+ , total := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `total amount`))][
+ , c("principal amount", "total amount") := NULL]
+setnames(extractedAmounts, c("case number"), c("case"))
+
+## Load validation data (Zoe's data)
+validationResults <- fread(file.path(DATAROOT, "results", "validation-results.csv.bz2"),
+                           header=TRUE)
+setnames(validationResults,
+         c("V1", "Medical debt? (Yes/No)"),
+         c("case", "medical"),
+         skip_absent=TRUE)
+validationAmounts <- validationResults[
+   tolower(medical) == "yes", .(case, medical, `Judgment Amount`, `Principal Amount`)][
+   ## in case of judgement amount: comma separated list, retain the largest value only
+ , total := gsub(" +", "", `Judgment Amount`) %>%
+      strsplit(",") %>%
+      sapply(function(x) max(as.numeric(x)))
+][
+ total < 0, total := NA][
+ , principal := as.numeric(gsub(" +", "", `Principal Amount`))][
+ , c("medical", "Judgment Amount", "Principal Amount") := NULL]
+## How many rows in validation data?  It is a bit tricky because all
+## case numbers are filled out..
+nValidation <- validationResults[ , sum(medical != "" | Provider != "" | Name != "")]
+@ 
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Motivation 1}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+      \item Medical debt a major issue in the U.S. public health
+        system
+        \begin{itemize}
+        \item Medical debt $\sim \$500$ per person
+        \item \$2,500 conditional on having a debt.
+        \end{itemize}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \includegraphics[width=\linewidth]{kluender-debt-stock.png}
+
+      Kluender et al (2021)
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Motivation 2}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+      \item A lot of data stored in documents
+      \item ``Semi-digital'' form (pdf files)
+      \item We want to learn to extract information from such files. 
+        \begin{itemize}
+        \item Names, addresses, dates, monetary amounts
+        \end{itemize}
+      \item Some of the information hand-written
+      \item Challenging to answer certain questions
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \includegraphics[width=\linewidth]{case-judgement-summary.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Data}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+      \item Medical debt collection lawsuits from Thurston county
+      \item Year 2020
+      \item $\sim 1500$ cases
+      \item Different number of different files for each case
+      \item Manually extract data data from 200 lawsuits
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \includegraphics[width=\linewidth]{case-writ-of-garnishment.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Method}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+      \item Use LayoutLM model to extract the principal amount, judgement
+        amount
+      \item Convert the images to text, extract those amounts from text
+      \item Isolate areas on pages, work on only those areas
+      \item Challenging to train models
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \includegraphics[width=\linewidth]{case-cover-sheet.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Results}
+  Summary statistics: Extracted (E), validation (V)
+  \centering
+<<results="asis", dependson="loadData", error=TRUE>>=
+principal <- extractedAmounts$principal %>%
+   na.omit()
+total <- extractedAmounts$total %>%
+   na.omit()
+d <- list(
+   "N" = c(
+      length(principal), length(total),
+      length(validationAmounts$principal), length(validationAmounts$total)),
+   "Missings" = c(
+      sum(is.na(principal)), sum(is.na(total)),
+      sum(is.na(validationAmounts$principal)), sum(is.na(validationAmounts$total))),
+   "min" = c(
+      min(principal, na.rm=TRUE), min(total, na.rm=TRUE),
+      min(validationAmounts$principal, na.rm=TRUE), min(validationAmounts$total, na.rm=TRUE)),
+   "median" = c(
+      median(principal, na.rm=TRUE), median(total, na.rm=TRUE),
+      median(validationAmounts$principal, na.rm=TRUE), median(validationAmounts$total, na.rm=TRUE)),
+   "mean" = c(
+      mean(principal, na.rm=TRUE), mean(total, na.rm=TRUE),
+      mean(validationAmounts$principal, na.rm=TRUE), mean(validationAmounts$total, na.rm=TRUE)),
+   "max" = c(
+      max(principal, na.rm=TRUE), max(total, na.rm=TRUE),
+      max(validationAmounts$principal, na.rm=TRUE), max(validationAmounts$total, na.rm=TRUE)),
+   "80/20 ratio" = c(
+      r80.20(principal), r80.20(total),
+      r80.20(validationAmounts$principal), r80.20(validationAmounts$total))
+)
+dmat <- Reduce(rbind, d)
+rownames(dmat) <- names(d)
+colnames(dmat) <- c("Principal (E)",
+                    "Total (E)",
+                    "Principal (V)", "Judgement (V)")
+dmat %>%
+   xtable() %>%
+   print(floating=FALSE,
+         include.colnames=TRUE, include.rownames=TRUE,
+         booktabs=TRUE)
+@
+\end{frame}
+
+<<validation-data, dependson="loadData", include=FALSE>>=
+validation <- merge(extractedAmounts, validationAmounts,
+                    all=FALSE, suffixes = c(".E", ".V"),
+                    by="case")
+@ 
+
+\begin{frame}
+  \frametitle{Monetary amount: automatic versus manual}
+  \centering
+<<amount-validation-plot, error=TRUE, dependson="validation-data", warning=FALSE>>=
+## Long form for easier ggplotting    
+vLong <- melt(validation, id.vars="case",
+              measure.vars=list(c("principal.E", "total.E"),
+                                c("principal.V", "total.V")),
+              value.name=c("Automatic", "Manual"),
+              variable.name="Type"
+              )[
+ , Type := ifelse(Type == 1, "Principal", "Total")]
+                           # Better labels for types
+p <- ggplot(vLong, aes(Automatic, Manual, col=Type)) +
+   geom_abline(intercept=0, slope=1, col="gray") +
+   geom_point(alpha=0.5) +
+   scale_x_log10() + scale_y_log10()
+## Which extractions are off
+iOff <- which(abs(vLong$Automatic - vLong$Manual) > 1)
+offCases <- vLong$case[iOff]
+if(length(iOff) > 0) {
+   p <- p +
+      geom_text(data=vLong[iOff], label=offCases,
+                nudge_x = 0.17,
+                show.legend=FALSE,
+                col="black")
+}
+p
+@     
+\end{frame}
+
+\begin{frame}
+  \frametitle{Principal Amount vs Total Amount}
+  \centering
+<<warning=FALSE, dependson="loadData">>=
+ggplot(extractedAmounts, aes(principal, total)) +
+   geom_point() +
+   geom_abline(slope=1, col="gray") +
+   geom_smooth(method="lm", se=FALSE, alpha=0.5, size=0.2) +
+   labs(x="Principal amount", y="Total amount")
+@
+\end{frame}
+
+\begin{frame}
+  \frametitle{Conclusions}
+  \begin{itemize}
+  \item The monetary amounts very well extracted but recall low ($\sim
+    55\%$)
+  \item Good precision ($\sim 96\%$)
+  \item Certain information extremely hard to extract (health
+    insurance)
+  \item More work needed!
+  \end{itemize}
+\end{frame}
+
+\end{document}

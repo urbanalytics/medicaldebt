@@ -12,9 +12,12 @@
 
 # not versioned files and folders
 adm/
+literature/
 
 # unneeded folders
 .cache/
 auto/
 logs/
 
+# Compiled files
+docs/medical-case-confidentiality-agreement.pdf
