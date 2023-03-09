@@ -6,6 +6,7 @@
 *.aux
 *.out
 *.bbl
+Rplots.pdf
 
 # backup files
 *~
@@ -20,4 +21,5 @@ auto/
 logs/
 
 # Compiled files
+figures/
 docs/medical-case-confidentiality-agreement.pdf

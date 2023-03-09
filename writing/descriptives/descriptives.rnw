@@ -65,7 +65,8 @@ casedata[, amount := as.numeric(gsub("[$,]", "",
 
 ## Load extracted data (by Bingbing)
 extractedResults <- fread(file.path(DATAROOT, "results", "extracted-results.csv.bz2"))
-extractedAmounts <- extractedResults[, .(`case number`, `principal amount`, `total amount`)][
+extractedAmounts <- extractedResults[
+ , .(`case number`, `principal amount`, `total amount`)][
  , principal := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `principal amount`))][
  , total := as.numeric(gsub(".*\\$ ([[:digit:].]+).*", "\\1", `total amount`))][
  , c("principal amount", "total amount") := NULL]
@@ -217,9 +218,9 @@ h1 <- ggplot() +
    labs(x = "Case civil suit amount ($)", title="Principal") +
    scale_x_log10()
 h2 <- ggplot() +
-   geom_density(data=extractedAmounts, aes(principal),
+   geom_density(data=extractedAmounts, aes(total),
                 fill = "skyblue", col="black", alpha=0.5) +
-   geom_density(data=validationAmounts, aes(principal),
+   geom_density(data=validationAmounts, aes(total),
                 fill = "salmon2", col="black", alpha=0.5) +
    labs(x = "Case civil suit amount ($)", title="Total") +
    scale_x_log10()
