@@ -59,6 +59,7 @@ $(DESCRIPTIVES): $(WRITINGDIR)/descriptives.rnw $(CODEDIR)/conf.R \
 all: $(PDF)
 
 clean:
-	rm -vf $(TEX) *.rmd~
+	rm -vf $(TEX) *.rnw~ *.aux *.bbl *.blg *.fdb_latexmk \
+ *.fls *.log *.out *.xdv
 # -v : verbose
 # -f: ignore non-existent files

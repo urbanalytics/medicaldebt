@@ -18,7 +18,7 @@
 
 \newcommand{\todo}[1]{\marginnote{#1}}
 
-<<init, include=FALSE>>=
+<<setup, include=FALSE>>=
 knitr::opts_knit$set(aliases=c(h="fig.height", w="fig.width"))
 knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
                       h=120/25.4, w=160/25.4,
@@ -43,7 +43,7 @@ subjective health outcomes and lower out-of-pocket medical
 expenditures and medical debt \citep{finkelstein+2012QJE}.
 
 
-<<setup, include=FALSE>>=
+<<init, include=FALSE, cache.extra=Sys.info()["user"]>>=
 source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
 source(file.path(CODEDIR, "utils.R"))
 w2 <- 70/25.4  # width for 2col of figures
@@ -55,14 +55,13 @@ library(magrittr)
 library(data.table)
 library(xtable)
 @ 
-<<loadData, cached=TRUE, include=FALSE, error=TRUE, cache.extra=file.info(file.path(RESULTSDIR, "validation-results.csv.bz2"))>>=
+<<loadData, cached=TRUE, include=TRUE, error=TRUE, dependson="init", cache.extra=file.info(file.path(RESULTSDIR, "validation-results.csv.bz2"))>>=
 ## Load data from the original table (Kali?)
 casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
    setDT()
 casedata[, amount := as.numeric(gsub("[$,]", "",
                                      `Case Civil Suit Amount`))][
  , `Case Civil Suit Amount` := NULL]
-
 ## Load extracted data (by Bingbing)
 extractedResults <- fread(file.path(DATAROOT, "results", "extracted-results.csv.bz2"))
 extractedAmounts <- extractedResults[
@@ -91,7 +90,8 @@ validationAmounts <- validationResults[
  , c("medical", "Judgment Amount", "Principal Amount") := NULL]
 ## How many rows in validation data?  It is a bit tricky because all
 ## case numbers are filled out..
-nValidation <- validationResults[ , sum(medical != "" | Provider != "" | Name != "")]
+nValidation <- validationResults[
+ , sum(medical != "" | Provider != "" | Name != "")]
 @
 
 \section{Data Sources}
@@ -110,7 +110,8 @@ Next data source is the one extracted by Bingbing from casefiles using
 layoutLM.  We refer to this as ``extracted data'' (E).  It contains
 \Sexpr{nrow(extractedResults)} cases.
 
-Final source is ``validation data'' (V), manually extracted by Zoe.  It
+Final source is ``validation data'' (V), manually extracted by Zoe and
+Komoudi.  It
 contains \Sexpr{nValidation} rows.
 
 
@@ -209,7 +210,7 @@ outliers.
 
 \begin{figure}[ht]
   \centering
-<<results="hide">>=
+<<results="hide", dependson="loadData">>=
 h1 <- ggplot() +
    geom_density(data=extractedAmounts, aes(principal),
                 fill = "skyblue", col="black", alpha=0.5) +
@@ -411,14 +412,13 @@ ggplot(extractedAmounts, aes(principal, total)) +
 @
 \caption{
   Principal versus total amount of lawsuits.  In every single case,
-  the total amount exceeds the principal one.  The blue line shows the
+  the total amount exceeds the principal amount, one-to-one
+  relationship is marked by the gray diagonal line.
+  The blue line shows the
   linear fit.
 }
 \label{fig:principal-total}
 \end{figure}
-
-
-
 
 We can also estimate OLS
 \begin{equation}

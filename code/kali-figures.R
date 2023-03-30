@@ -80,11 +80,8 @@ extactedResults <- extractedResults %>%
 cat("Load validation (by Zoe) results:\n")
 validationResults <- read_delim(
    file.path(DATAROOT, "results", "validation-results.csv.bz2")
-                           # no good name for 1st column
-                           # comes out as `...1`
 ) %>%
    rename(
-      case = `...1`,
       medical = `Medical debt? (Yes/No)`
    )
 validationAmounts <- validationResults %>%

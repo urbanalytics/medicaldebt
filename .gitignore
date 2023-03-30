@@ -6,6 +6,8 @@
 *.aux
 *.out
 *.bbl
+*.blg
+*.fdb_latexmk
 Rplots.pdf
 
 # backup files
