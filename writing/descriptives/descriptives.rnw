@@ -86,7 +86,11 @@ validationAmounts <- validationResults[
       sapply(function(x) max(as.numeric(x)))
 ][
  total < 0, total := NA][
- , principal := as.numeric(gsub(" +", "", `Principal Amount`))][
+ , principal :=  gsub(" +", "", `Principal Amount`) %>%
+      gsub("\\.$", "", .) %>%
+                           # in some cases has and additional '.' at the end
+      strsplit(",") %>%
+      sapply(function(x) max(as.numeric(x)))][
  , c("medical", "Judgment Amount", "Principal Amount") := NULL]
 ## How many rows in validation data?  It is a bit tricky because all
 ## case numbers are filled out..
@@ -111,7 +115,7 @@ layoutLM.  We refer to this as ``extracted data'' (E).  It contains
 \Sexpr{nrow(extractedResults)} cases.
 
 Final source is ``validation data'' (V), manually extracted by Zoe and
-Komoudi.  It
+Koumudi.  It
 contains \Sexpr{nValidation} rows.
 
 

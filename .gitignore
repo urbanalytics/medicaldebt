@@ -8,6 +8,7 @@
 *.bbl
 *.blg
 *.fdb_latexmk
+*.fls
 Rplots.pdf
 
 # backup files
@@ -25,3 +26,4 @@ logs/
 # Compiled files
 figures/
 docs/medical-case-confidentiality-agreement.pdf
+writing/descriptives/*.pdf
