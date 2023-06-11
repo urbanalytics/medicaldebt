@@ -42,6 +42,16 @@ care utilization,
 subjective health outcomes and lower out-of-pocket medical
 expenditures and medical debt \citep{finkelstein+2012QJE}.
 
+The U.S. has no universal health insurance.  Instead, there is a
+plethora of government and private programs that offer free or
+subsidized health care.  One of such is the non-profit hospital
+systems that receive federal tax breaks given they offer free or
+subsidized health care and other community services as specified in
+the corresponding legislation.  However, even for non-profits, there
+is little motivation to channel income to free healthcare.  Instead,
+we see that growing profits are channeled to increasing cash reserves
+\citep{Jenkins+ho2023HA}.
+
 
 <<init, include=FALSE, cache.extra=Sys.info()["user"]>>=
 source(file.path(Sys.getenv("HOME"), "tyyq", "social", "medicaldebt", "code", "conf.R"))
@@ -55,8 +65,8 @@ library(magrittr)
 library(data.table)
 library(xtable)
 @ 
-<<loadData, cached=TRUE, include=TRUE, error=TRUE, dependson="init", cache.extra=file.info(file.path(RESULTSDIR, "validation-results.csv.bz2"))>>=
-## Load data from the original table (Kali?)
+<<loadData, cached=TRUE, include=TRUE, error=FALSE, dependson="init", cache.extra=file.info(file.path(RESULTSDIR, "validation-results.csv.bz2"))>>=
+## Load data from the original table (Sherry?)
 casedata <- readODS::read_ods(file.path(DATAROOT, "cases.ods")) %>%
    setDT()
 casedata[, amount := as.numeric(gsub("[$,]", "",

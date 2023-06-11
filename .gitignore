@@ -9,6 +9,7 @@
 *.blg
 *.fdb_latexmk
 *.fls
+*.tex
 Rplots.pdf
 
 # backup files
